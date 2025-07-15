@@ -1,0 +1,32 @@
+parameters:
+  - name: AppName
+    type: string
+    default: 'NoName'
+  - name: AzureSubscription
+    type: string
+    default: ''
+
+steps:
+- download: current
+  artifact: drop
+
+- task: AzureRmWebAppDeployment@4
+  displayName: 'Deploy Azure App Service'
+  inputs:
+    ConnectionType: 'AzureRM'
+    azureSubscription: '${{ parameters.AzureSubscription }}'
+    appType: '$(Parameters.WebAppKind)'
+    WebAppName: '${{ parameters.AppName }}'
+    packageForLinux: '$(Pipeline.Workspace)/drop/**/*.zip'
+
+- task: AzureCLI@2
+  displayName: 'Azure CLI '
+  inputs:
+    ConnectionType: 'AzureRM'
+    azureSubscription: '${{ parameters.AzureSubscription }}'
+    scriptType: ps
+    scriptLocation: inlineScript
+    inlineScript: |
+     $appid = az webapp list --query "[?name=='${{ parameters.AppName }}'].id" --output tsv
+     az webapp config set --ids $appid --http20-enabled true --web-sockets-enabled true
+     az webapp update --ids $appid --set httpsOnly=true

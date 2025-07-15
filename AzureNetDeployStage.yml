@@ -1,0 +1,69 @@
+parameters:
+  - name: AppName
+    type: string
+    default: 'NoName'
+  - name: AzureSubscription
+    type: string
+    default: ''
+  - name: Environment
+    type: string
+    default: 'Staging'
+  - name: 'AutoDeploy'
+    type: boolean
+    default: false
+  - name: 'PreviousStage'
+    type: string
+    default: 'Build_Release'
+
+stages:
+- stage: Deploy_${{ parameters.Environment}}
+  condition: succeeded()
+  dependsOn: '${{ parameters.PreviousStage}}'
+  jobs:
+  - job: waitForValidation
+    displayName: Wait for external validation
+    pool: server
+    timeoutInMinutes: 100 # job times out in 3 days
+    steps:
+    - task: ManualValidation@0
+      condition: eq(${{ parameters.AutoDeploy}}, false)
+      timeoutInMinutes: 60 # task times out in 1 day
+      inputs:
+        notifyUsers: |
+          $(Build.RequestedForEmail)
+        instructions: 'Veuillez valider la mise en production du site'
+        onTimeout: 'reject'
+
+  - deployment: 'Deploy_${{ parameters.Environment}}'
+    dependsOn: waitForValidation
+    pool:
+      vmImage: 'windows-latest'
+    displayName: 'Deploy the web application to ${{ parameters.Environment}}'
+    environment:
+      name: ${{ parameters.Environment}}
+    strategy:
+      runOnce:
+        deploy:
+          steps:
+          - download: current
+            artifact: drop
+
+          - task: AzureWebApp@1
+            displayName: 'Deploy Azure App Service'
+            inputs:
+              azureSubscription: '${{ parameters.AzureSubscription }}'
+              appName: '${{ parameters.AppName }}'
+              package: '$(Pipeline.Workspace)/drop/**/*.zip'
+              deploymentMethod: 'zipDeploy'
+
+          - task: AzureCLI@2
+            displayName: 'Azure CLI '
+            inputs:
+              ConnectionType: 'AzureRM'
+              azureSubscription: '${{ parameters.AzureSubscription }}'
+              scriptType: ps
+              scriptLocation: inlineScript
+              inlineScript: |
+                $appid = az webapp list --query "[?name=='${{ parameters.AppName }}'].id" --output tsv
+                az webapp config set --ids $appid --http20-enabled true --web-sockets-enabled true --settings WEBSITE_NODE_DEFAULT_VERSION="~17"
+                az webapp update --ids $appid --set httpsOnly=true

@@ -1,0 +1,30 @@
+parameters:
+  - name: 'solution'
+    default: '**/*.sln'
+    type: string
+  - name: 'BuildPlatform'
+    type: string
+    default: 'Any CPU'
+  - name: 'BuildConfiguration'
+    type: string
+    default: 'Release'
+  - name: 'CodeAnalysis'
+    type: boolean
+    default: true
+  - name: 'Artifact'
+    type: string
+    default: 'drop'
+
+stages:
+- stage: 'Build_${{ parameters.BuildConfiguration}}'
+  jobs:
+  - job: Build
+    pool: 'windows-10'
+    steps:
+    - template: WebNetBuildSteps.yml@templates
+      parameters:
+        solution: ${{ parameters.solution}}
+        BuildPlatform: ${{ parameters.BuildPlatform}}
+        BuildConfiguration: ${{ parameters.BuildConfiguration}}
+        CodeAnalysis: ${{ parameters.CodeAnalysis}}
+        Artifact: ${{ parameters.Artifact}}

@@ -1,0 +1,15 @@
+parameters:
+  - name: 'CodeAnalysis'
+    type: boolean
+    default: true
+
+steps:
+- task: SonarQubePrepare@5
+  condition: and(eq(${{ parameters.CodeAnalysis}}, true), or(eq(variables['Build.SourceBranch'], 'refs/heads/master'), eq(variables['Build.SourceBranch'], 'refs/heads/main')))
+  inputs:
+    SonarQube: 'SonarQube-$(System.TeamProject)'
+    scannerMode: 'MSBuild'
+    projectKey: 'S$(System.DefinitionId)'
+    projectName: '$(Build.DefinitionName)'
+    extraProperties: sonar.exclusions=**/wwwroot/assets/**,**/npmjs/**,**/open-iconic/**,**/datatables/**,**/Around/**,**/Datatables/**,**/DataTables/**,**/fontawesome/**,**/FullCalendar/**,**/select2/**,**/tinymce/**,**/jsPDF-*/**,**/bootstrap*.js,**/jquery*.js,**/moment*.js,**/toastr*.js,**/Site.css,**/site.css,**/bootstrap*.css,**/fullcalendar*.css,**/modernizr-*.js,**/bootstrap/**,**/flatpickr/**,**/themes/**,**/jarallax/**,**/lightgallery.js/**,**/simplebar/**,**/tiny-slider/**,**/around-components/**,**/intl-tel-input/**,**/fonts/Convention/**
+  continueOnError: true

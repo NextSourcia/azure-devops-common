@@ -1,0 +1,184 @@
+parameters:
+  - name: 'DistributionGroupId'
+    default: ''
+    type: string
+  - name: 'PackageName'
+    default: ''
+    type: string
+  - name: 'AppFolder'
+    default: ''
+    type: string
+
+stages:
+- stage: 'Build'
+  jobs:
+  - job: Build
+    pool: 'windows-10'
+    steps:
+    - template: GradleSonarQubePrepareTask.yml@templates
+
+# - task: DownloadSecureFile@1
+#  name: ConventionAccessKeyStore
+#  displayName: 'Download ConventionAccessKeyStore.keystore'
+#  inputs:
+#    secureFile: 'ConventionAccessKeyStore.keystore'
+
+#- script: sudo cp $(ConventionAccessKeyStore.secureFilePath) $(Build.Repository.LocalPath)/android/app
+#  displayName: Copy ConventionAccessKeyStore
+
+    - task: PowerShell@2
+      displayName: 'Set Tokens value'
+      inputs:
+        targetType: 'inline'
+        script: |
+          Write-Host "##vso[task.setvariable variable=BUILD_NUMBER;]$(Build.BuildNumber)"
+
+    - task: replacetokens@3
+      inputs:
+        rootDirectory: '$(Build.Repository.LocalPath)'
+        targetFiles: 'releasenote.md'
+        encoding: 'utf-8'
+        writeBOM: false
+        actionOnMissing: 'warn'
+        keepToken: false
+        tokenPrefix: '#{'
+        tokenSuffix: '}#'
+        useLegacyPattern: false
+        emptyValue: 
+        defaultValue: '$(Build.BuildNumber)'
+        enableTransforms: false
+        enableTelemetry: false
+
+    - task: NodeTool@0
+      displayName: 'Install Node.js'
+      inputs:
+        versionSpec: '18.x'
+    - task: Bash@3
+      inputs:
+        targetType: 'inline'
+        script: 'yarn cache clean'
+        #workingDirectory: '$(System.DefaultWorkingDirectory)/front'
+
+    - task: Bash@3
+      inputs:
+        targetType: 'inline'
+        script: 'yarn'
+        #workingDirectory: '$(System.DefaultWorkingDirectory)/front'
+
+    #- task: Bash@3
+    #  inputs:
+    #    targetType: 'inline'
+    #    script: 'yarn export'
+    #    #workingDirectory: '$(System.DefaultWorkingDirectory)/front'
+
+    #- task: Npm@1
+    #  displayName: 'Install NPM'
+    #  inputs:
+    #    command: 'custom'
+    #    customCommand: 'i -g npm@6'
+
+    #- task: Npm@1
+    #  displayName: 'NPM update packages'
+    #  inputs:
+    #    command: 'custom'
+    #    customCommand: 'update'
+
+    #- task: Npm@1
+    #  displayName: 'NPM packages install'
+    #  inputs:
+    #    command: 'install'
+
+#    - task: Npm@1
+#      displayName: 'NPM Lock'
+#      inputs:
+#        command: 'custom'
+#        customCommand: 'i --package-lock-only'
+
+    #- task: Npm@1
+    #  displayName: 'NPM packages audit'
+    #  inputs:
+    #    command: 'custom'
+    #    customCommand: 'audit fix'
+    #  continueOnError: true
+
+    #- task: Npm@1
+    #  displayName: 'Analyse outdated yarn packages'
+    #  inputs:
+    #    command: 'custom'
+    #    customCommand: 'outdated'
+    #  continueOnError: true
+
+    - task: JavaToolInstaller@0
+      inputs:
+        versionSpec: '11'
+        jdkArchitectureOption: 'x64'
+        jdkSourceOption: 'PreInstalled'
+    - task: Gradle@2
+      displayName: Gradle clean
+      inputs:
+        workingDirectory: 'android'
+        gradleWrapperFile: 'android/gradlew'
+        gradleOptions: '-Xmx3072m'
+        publishJUnitResults: false
+        testResultsFiles: '**/TEST-*.xml'
+        tasks: 'clean'
+    - task: Gradle@2
+      displayName: SonarQube analysis
+      inputs:
+        workingDirectory: 'android'
+        gradleWrapperFile: 'android/gradlew'
+        gradleOptions: '-Xmx3072m'
+        publishJUnitResults: false
+        testResultsFiles: '**/TEST-*.xml'
+        tasks: 'sonarqube'
+      continueOnError: true
+
+    - task: SonarQubePublish@4
+      displayName: SonarQube publish
+      condition: and(succeeded(), or(eq(variables['Build.SourceBranch'], 'refs/heads/master'), eq(variables['Build.SourceBranch'], 'refs/heads/main')))
+      inputs:
+        pollingTimeoutSec: '300'
+      continueOnError: true
+
+    - task: Gradle@2
+      displayName: Gradle assembleRelease
+      inputs:
+        workingDirectory: 'android'
+        gradleWrapperFile: 'android/gradlew'
+        gradleOptions: '-Xmx3072m'
+        publishJUnitResults: false
+        testResultsFiles: '**/TEST-*.xml'
+        tasks: 'assembleRelease'
+
+    # - task: AndroidSigning@2
+    #   inputs:
+    #     apkFiles: '**/*.apk'
+    #     jarsignerKeystoreFile: 'ConventionAccessKeyStore.keystore'
+    #     jarsignerKeystorePassword: 'Banana6!'
+    #     jarsignerKeystoreAlias: 'ConventionAccess'
+    #     jarsignerKeyPassword: 'Banana6!'
+
+#    - script: |
+#        echo Listing $(Build.Repository.LocalPath)/android/app
+#        sudo ls -R $(Build.Repository.LocalPath)/android
+
+    - script: mv $(Build.Repository.LocalPath)/android/app/build/outputs/apk/release/app-release.apk $(Build.Repository.LocalPath)/${{ parameters.PackageName}}$(Build.BuildNumber).apk
+      displayName: 'Rename apk'
+
+    - task: PublishBuildArtifacts@1
+      inputs:
+        pathtoPublish: Kurosu$(Build.BuildNumber).apk
+        artifactName: drop
+        publishLocation: 'container'
+
+    - task: AppCenterDistribute@3
+      inputs:
+        serverEndpoint: 'AppCenter-$(System.TeamProject)'
+        appSlug: '${{ parameters.AppFolder}}'
+        appFile: '$(Build.Repository.LocalPath)/${{ parameters.PackageName}}$(Build.BuildNumber).apk'
+        buildVersion: '$(Build.BuildNumber)'
+        symbolsOption: 'Android'
+        releaseNotesOption: 'file'
+        releaseNotesFile: '$(Build.Repository.LocalPath)/releasenote.md'
+        destinationType: 'groups'
+        distributionGroupId: '${{ parameters.DistributionGroupId}}'

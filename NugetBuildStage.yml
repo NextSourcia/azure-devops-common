@@ -1,0 +1,57 @@
+parameters:
+  - name: 'PackageName'
+    default: ''
+    type: string
+  - name: 'solution'
+    default: '**/*.sln'
+    type: string
+  - name: 'BuildPlatform'
+    type: string
+    default: 'Any CPU'
+  - name: 'BuildConfiguration'
+    type: string
+    default: 'Release'
+  - name: 'CodeAnalysis'
+    type: boolean
+    default: true
+  - name: 'PrereleaseNuget'
+    type: boolean
+    default: false
+
+stages:
+- stage: 'Build'
+  jobs:
+  - job: Build
+    pool: 'windows-10'
+    steps:
+    - template: WebNetBuildSteps.yml@templates
+      parameters:
+        solution: ${{ parameters.solution}}
+        BuildPlatform: ${{ parameters.BuildPlatform}}
+        BuildConfiguration: ${{ parameters.BuildConfiguration}}
+        CodeAnalysis: ${{ parameters.CodeAnalysis}}
+    
+    - task: NuGetCommand@2
+      condition: eq(${{ parameters.PrereleaseNuget}}, false)
+      displayName: 'NuGet pack'
+      inputs:
+        command: pack
+        packagesToPack: ${{ parameters.PackageName }}/${{ parameters.PackageName }}.nuspec
+        versioningScheme: byBuildNumber
+        includeSymbols: true
+        buildProperties: 'Version=$(Build.BuildNumber);Id=${{ parameters.PackageName }};Title=${{ parameters.PackageName }};Description=${{ parameters.PackageName }};Tags=${{ parameters.PackageName }};ReleaseNotes=""'
+
+    - task: NuGetCommand@2
+      condition: eq(${{ parameters.PrereleaseNuget}}, true)
+      displayName: 'NuGet pack for prerelease'
+      inputs:
+        command: pack
+        packagesToPack: ${{ parameters.PackageName }}/${{ parameters.PackageName }}.nuspec
+        includeSymbols: true
+        buildProperties: 'Version=$(Build.BuildNumber)-$(Build.SourceBranchName)-beta;Id=${{ parameters.PackageName }};Title=${{ parameters.PackageName }};Description=${{ parameters.PackageName }};Tags=${{ parameters.PackageName }};ReleaseNotes=""'
+
+    - task: NuGetCommand@2
+      displayName: 'NuGet push'
+      inputs:
+        command: push
+        publishVstsFeed: 'TODO GUID'    

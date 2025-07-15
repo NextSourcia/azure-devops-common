@@ -1,0 +1,74 @@
+parameters:
+- name: 'Output'
+  type: string
+  default: 'dist'
+
+stages:
+- stage: 'Build'
+  jobs:
+  - job: Build
+    pool: 'ubuntu-latest'
+
+    steps:
+    - task: NodeTool@0
+      inputs:
+        versionSpec: '18.x'
+      displayName: 'Install Node.js'
+
+    - task: Npm@1
+      displayName: 'Install NPM'
+      inputs:
+        command: 'custom'
+        customCommand: 'i -g npm@8'
+
+    - task: Npm@1
+      displayName: 'Update NPM packages'
+      inputs:
+        command: 'custom'
+        customCommand: 'update'
+
+    - task: Npm@1
+      displayName: 'NPM packages install'
+      inputs:
+        command: 'install'
+
+    - task: Npm@1
+      displayName: 'NPM packages audit'
+      inputs:
+        command: 'custom'
+        customCommand: 'audit'
+      continueOnError: true
+
+    - task: Npm@1
+      displayName: 'Analyse outdated npm packages'
+      inputs:
+        command: 'custom'
+        customCommand: 'outdated'
+      continueOnError: true
+
+    - task: Npm@1
+      displayName: 'NPM Build'
+      inputs:
+        command: 'custom'
+        customCommand: 'run build'
+
+    - task: ArchiveFiles@2
+      inputs:
+        rootFolderOrFile: '$(system.defaultworkingdirectory)/${{ parameters.Output}}'
+        includeRootFolder: false
+        archiveType: 'zip'
+        archiveFile: '$(Build.ArtifactStagingDirectory)/webapp.zip'
+        replaceExistingArchive: true
+
+    - task: PublishBuildArtifacts@1
+      inputs:
+        PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+        ArtifactName: 'drop'
+
+    # - task: BeanstalkDeployApplication@1
+    #   inputs:
+    #     awsCredentials: 'AWS_MXP'
+    #     regionName: 'eu-west-3'
+    #     applicationName: 'mxpfrontprod'
+    #     environmentName: 'Mxpfrontprod-env'
+    #     applicationType: 'version'

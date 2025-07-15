@@ -1,0 +1,58 @@
+parameters:
+  - name: 'solution'
+    default: '**/*.sln'
+    type: string
+  - name: 'BuildPlatform'
+    default: 'Any CPU'
+    type: string
+  - name: 'BuildConfiguration'
+    default: 'Release'
+    type: string
+  - name: 'CodeAnalysis'
+    type: boolean
+    default: true
+  - name: 'Artifact'
+    type: string
+    default: 'drop'
+
+steps:
+- template: SonarQubePrepareTask.yml@templates
+  parameters:
+    CodeAnalysis: ${{ parameters.CodeAnalysis}}
+
+- task: NuGetToolInstaller@1
+  displayName: 'Use NuGet 4.x'
+  inputs:
+    checkLatest: true
+
+- task: NuGetCommand@2
+  inputs:
+    command: 'restore'
+    restoreSolution: '${{ parameters.solution }}'
+
+- task: VSBuild@1
+  inputs:
+    solution: '${{ parameters.solution }}'
+    msbuildArgs: '/p:Version="$(Build.BuildNumber)" /p:DeployOnBuild=true /p:WebPublishMethod=Package /p:PackageAsSingleFile=true /p:SkipInvalidConfigurations=true /p:PackageLocation="$(build.artifactStagingDirectory)"'
+    platform: '${{ parameters.BuildPlatform }}'
+    configuration: '${{ parameters.BuildConfiguration }}'
+
+- task: VSTest@2
+  inputs:
+    platform: '${{ parameters.BuildPlatform }}'
+    configuration: '${{ parameters.BuildConfiguration }}'
+
+- task: SonarQubeAnalyze@4
+  condition: and(succeeded(), eq(${{ parameters.CodeAnalysis}}, true), or(eq(variables['Build.SourceBranch'], 'refs/heads/master'), eq(variables['Build.SourceBranch'], 'refs/heads/main')))
+  continueOnError: true
+
+- task: SonarQubePublish@4
+  condition: and(succeeded(), eq(${{ parameters.CodeAnalysis}}, true), or(eq(variables['Build.SourceBranch'], 'refs/heads/master'), eq(variables['Build.SourceBranch'], 'refs/heads/main')))
+  inputs:
+    pollingTimeoutSec: '300'
+  continueOnError: true
+
+- task: PublishBuildArtifacts@1
+  inputs:
+    pathToPublish: $(Build.ArtifactStagingDirectory)
+    artifactName: ${{ parameters.Artifact }}

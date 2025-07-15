@@ -1,0 +1,151 @@
+parameters:
+  - name: 'Project'
+    default: '**/*.csproj'
+    type: string
+  - name: 'Solution'
+    default: '**/*.sln'
+    type: string
+  - name: 'BuildPlatform'
+    type: string
+    default: 'Any CPU'
+  - name: 'BuildConfiguration'
+    type: string
+    default: 'Release'
+  - name: 'CodeAnalysis'
+    type: boolean
+    default: true
+  - name: 'Artifact'
+    type: string
+    default: 'drop'
+  - name: 'NPMPath'
+    type: string
+    default: 'ClientApp'
+
+stages:
+- stage: 'Build_${{ parameters.BuildConfiguration}}'
+  jobs:
+  - job: Build
+    pool: 'windows-10'
+    steps:
+    - task: UseDotNet@2
+      displayName: 'Use dotnet 6'
+      inputs:
+        version: '6.0.x'    
+ 
+    - template: SonarQubePrepareTask.yml@templates
+      parameters:
+        CodeAnalysis: ${{ parameters.CodeAnalysis}}
+
+    - task: NodeTool@0
+      inputs:
+        versionSpec: '18.x'
+      displayName: 'Install Node.js'
+
+    - task: Npm@1
+      displayName: 'Install NPM'
+      inputs:
+        command: 'custom'
+        customCommand: 'i -g npm@8'
+
+    - task: Npm@1
+      displayName: 'Install Yarn'
+      inputs:
+        command: 'custom'
+        customCommand: 'install --global yarn'
+
+    - task: Npm@1
+      displayName: 'Update NPM packages'
+      inputs:
+        command: 'custom'
+        customCommand: 'update'        
+
+    - task: Npm@1
+      displayName: 'NPM packages install'
+      inputs:
+        command: 'custom'
+        CustomCommand: 'install --save --legacy-peer-deps'
+        workingDir: '$(System.DefaultWorkingDirectory)\${{parameters.NPMPath}}'
+  
+    - task: Npm@1
+      displayName: 'NPM Lock'
+      inputs:
+        command: 'custom'
+        customCommand: 'i --package-lock-only'
+        workingDir: '$(System.DefaultWorkingDirectory)\${{parameters.NPMPath}}'
+      continueOnError: true
+
+    - task: NuGetToolInstaller@1
+      displayName: 'Installing NuGet'
+      inputs:
+        versionSpec: '5.8.0'
+        checkLatest: true
+
+    - task: NuGetCommand@2
+      displayName: 'Restoring Nuget packages'
+      inputs:
+        command: 'restore'
+        restoreSolution: '${{parameters.Solution}}'
+        feedsToUse: 'config'
+        nugetConfigPath: 'NuGet.config'
+
+    - task: DotNetCoreCLI@2
+      displayName: 'Restoring projects'
+      inputs:
+        command: 'restore'
+        projects: '${{parameters.Project}}'
+
+    - task: Npm@1
+      displayName: 'NPM packages audit'
+      inputs:
+        command: 'custom'
+        customCommand: 'audit'
+        workingDir: '$(System.DefaultWorkingDirectory)\${{parameters.NPMPath}}'
+      continueOnError: true
+
+    - task: Npm@1
+      displayName: 'Analyse outdated npm packages'
+      inputs:
+        command: 'custom'
+        customCommand: 'outdated'
+        workingDir: '$(System.DefaultWorkingDirectory)\${{parameters.NPMPath}}'
+      continueOnError: true
+
+    - task: DotNetCoreCLI@2
+      inputs:
+        command: 'publish'
+        projects: '${{parameters.Project}}'
+        arguments: '--configuration ${{parameters.BuildConfiguration}} -o $(Build.ArtifactStagingDirectory)/drop'
+        publishWebProjects: false
+        zipAfterPublish: true
+        modifyOutputPath: true        
+      displayName: 'Build'
+
+    - task: DotNetCoreCLI@2
+      displayName: 'Unit testing'
+      inputs:
+        command: test
+        projects: '**/*Tests/*.csproj'
+        arguments: '--configuration "Release" --collect "Code coverage"'
+      continueOnError: true
+
+    - task: CmdLine@2
+      displayName: 'Update browser version'
+      inputs:
+        script: npx browserslist@latest --update-db
+        workingDirectory: '$(System.DefaultWorkingDirectory)\${{parameters.NPMPath}}'
+      continueOnError: true
+
+    - task: SonarQubeAnalyze@4
+      condition: and(succeeded(), eq(${{ parameters.CodeAnalysis}}, true), or(eq(variables['Build.SourceBranch'], 'refs/heads/master'), eq(variables['Build.SourceBranch'], 'refs/heads/main')))
+      continueOnError: true
+
+    - task: SonarQubePublish@4
+      condition: and(succeeded(), eq(${{ parameters.CodeAnalysis}}, true), or(eq(variables['Build.SourceBranch'], 'refs/heads/master'), eq(variables['Build.SourceBranch'], 'refs/heads/main')))
+      inputs:
+        pollingTimeoutSec: '300'
+      continueOnError: true
+
+    - task: PublishBuildArtifacts@1
+      inputs:
+        pathToPublish: $(Build.ArtifactStagingDirectory)/drop
+        artifactName: drop

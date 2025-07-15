@@ -1,0 +1,15 @@
+parameters:
+  - name: 'CodeAnalysis'
+    type: boolean
+    default: true
+
+steps:
+- task: SonarQubePrepare@4
+  condition: and(eq(${{ parameters.CodeAnalysis}}, true), or(eq(variables['Build.SourceBranch'], 'refs/heads/master'), eq(variables['Build.SourceBranch'], 'refs/heads/main')))
+  inputs:
+    SonarQube: 'SonarQube-$(System.TeamProject)'
+    scannerMode: 'Other'
+    projectKey: 'S$(System.DefinitionId)'
+    projectName: '$(Build.DefinitionName)'
+    extraProperties: sonar.exclusions=**/java/**
+  continueOnError: true

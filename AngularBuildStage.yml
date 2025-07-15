@@ -1,0 +1,117 @@
+stages:
+- stage: 'Build'
+  jobs:
+  - job: Build
+    pool: 'windows-10'
+    steps:
+    - task: SonarQubePrepare@4
+      inputs:
+        SonarQube: 'SonarQube-$(System.TeamProject)'
+        scannerMode: 'CLI'
+        configMode: 'manual'
+        cliProjectKey: 'S$(System.DefinitionId)'
+        cliProjectName: '$(Build.DefinitionName)'
+        cliSources: '.'
+      continueOnError: true
+ 
+    - task: NodeTool@0
+      displayName: 'Install Node.js'
+      inputs:
+        versionSpec: '18.x'
+
+    - task: Npm@1
+      displayName: 'Install NPM'
+      inputs:
+        command: 'custom'
+        customCommand: 'i -g npm@8'
+
+    - task: Npm@1
+      displayName: 'Install Angular CLI'
+      inputs:
+        command: 'custom'
+        customCommand: 'install -g @angular/cli'
+
+    - task: Npm@1
+      displayName: 'Update NPM packages'
+      inputs:
+        command: 'custom'
+        customCommand: 'update'
+
+    - task: Npm@1
+      displayName: 'NPM packages install'
+      inputs:
+        command: 'install'
+
+    - task: Npm@1
+      displayName: 'NPM Lock'
+      inputs:
+        command: 'custom'
+        customCommand: 'i --package-lock-only'
+
+    - task: Npm@1
+      displayName: 'NPM packages audit'
+      inputs:
+        command: 'custom'
+        customCommand: 'audit'
+      continueOnError: true
+
+    - task: CmdLine@2
+      displayName: 'Check Angular version'
+      inputs:
+        script: ng version
+
+    - task: Npm@1
+      displayName: 'Analyse outdated npm packages'
+      inputs:
+        command: 'custom'
+        customCommand: 'outdated'
+      continueOnError: true
+
+    - task: PowerShell@2
+      displayName: 'Set APP_VERSION value'
+      inputs:
+        targetType: 'inline'
+        script: |
+        Write-Host $(Build.BuildNumber)
+        Write-Host "##vso[task.setvariable variable=APP_VERSION;]$(Build.BuildNumber)"
+
+    - task: replacetokens@3
+      inputs:
+        targetFiles: "$(System.DefaultWorkingDirectory)/**/environment*.ts"
+        encoding: "auto"
+        writeBOM: true
+        verbosity: "detailed"
+        actionOnMissing: "warn"
+        keepToken: false
+        tokenPrefix: "#["
+        tokenSuffix: "]#"
+        useLegacyPattern: false
+        enableTelemetry: true
+
+    - task: Npm@1
+      displayName: 'Build angular app'
+      inputs:
+        command: 'custom'
+        customCommand: 'run build:ssr'
+
+    - task: SonarQubeAnalyze@4
+      continueOnError: true
+
+    - task: SonarQubePublish@4
+      inputs:
+        pollingTimeoutSec: '300'
+      continueOnError: true
+
+    - task: ArchiveFiles@2
+      inputs:
+        rootFolderOrFile: '$(system.defaultworkingdirectory)/dist'
+        includeRootFolder: false
+        archiveType: 'zip'
+        archiveFile: '$(Build.ArtifactStagingDirectory)/webapp.zip'
+        replaceExistingArchive: true
+
+    - task: PublishBuildArtifacts@1
+      displayName: 'Publish Artifact: drop'
+      inputs:
+        PathtoPublish: '$(build.artifactstagingdirectory)'
+      condition: succeededOrFailed()

@@ -1,0 +1,69 @@
+parameters:
+- name: 'solution'
+  default: '**/*.sln'
+  type: string
+- name: 'BuildPlatform'
+  default: 'Any CPU'
+  type: string
+- name: 'BuildConfiguration'
+  default: 'Release'
+  type: string
+- name: 'CodeAnalysis'
+  type: boolean
+  default: true
+
+stages:
+- stage: 'Build'
+  jobs:
+  - job: Build
+    pool: 'windows-10'
+
+    steps:
+    - template: SonarQubePrepareTask.yml@templates
+      parameters:
+        CodeAnalysis: ${{ parameters.CodeAnalysis}}    
+
+    - task: NuGetToolInstaller@1
+      displayName: 'Installing NuGet'
+      inputs:
+        versionSpec: '6.4.0'
+        checkLatest: true
+
+    - task: NuGetCommand@2
+      inputs:
+        command: 'restore'
+        restoreSolution: '${{ parameters.solution }}'
+
+    - task: VSBuild@1
+      inputs:
+        solution: '${{ parameters.solution }}'
+        platform: '${{ parameters.BuildPlatform }}'
+        configuration: '${{ parameters.BuildConfiguration }}'
+        msbuildArgs: '/p:Version="$(Build.BuildNumber)" /p:OutDir=$(Build.BinariesDirectory)'
+  
+    - task: ArchiveFiles@2
+      inputs:
+        rootFolderOrFile: '$(Build.BinariesDirectory)' 
+        includeRootFolder: false 
+        archiveType: 'zip'
+        archiveFile: '$(Build.ArtifactStagingDirectory)/Application.zip'
+
+    - task: VSTest@2
+      inputs:
+        platform: '${{ parameters.BuildPlatform }}'
+        configuration: '${{ parameters.BuildConfiguration }}'
+
+    - task: SonarQubeAnalyze@4
+      condition: and(succeeded(), eq(${{ parameters.CodeAnalysis}}, true), or(eq(variables['Build.SourceBranch'], 'refs/heads/master'), eq(variables['Build.SourceBranch'], 'refs/heads/main')))
+      continueOnError: true
+
+    - task: SonarQubePublish@4
+      condition: and(succeeded(), eq(${{ parameters.CodeAnalysis}}, true), or(eq(variables['Build.SourceBranch'], 'refs/heads/master'), eq(variables['Build.SourceBranch'], 'refs/heads/main')))
+      inputs:
+        pollingTimeoutSec: '300'
+      continueOnError: true
+
+    - task: PublishBuildArtifacts@1
+      inputs:
+        pathToPublish: $(Build.ArtifactStagingDirectory)
+        artifactName: drop

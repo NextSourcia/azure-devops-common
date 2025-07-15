@@ -1,0 +1,40 @@
+parameters:
+  - name: 'solution'
+    default: '**/*.sln'
+    type: string
+  - name: 'BuildPlatform'
+    type: string
+    default: 'Any CPU'
+  - name: 'BuildConfiguration'
+    type: string
+    default: 'Release'
+  - name: 'WebSiteName'
+    type: string
+    default: 'TestWebSites'
+  - name: 'WebAppName'
+    type: string
+    default: ''
+  - name: 'Environment'
+    type: string
+    default: 'Test'
+  - name: 'AutoDeploy'
+    type: boolean
+    default: false
+  - name: 'CodeAnalysis'
+    type: boolean
+    default: true
+
+stages:
+- template: WebNetBuildStage.yml@templates
+  parameters:
+    solution: ${{ parameters.solution}}
+    BuildPlatform: ${{ parameters.BuildPlatform}}
+    BuildConfiguration: ${{ parameters.BuildConfiguration}}
+    CodeAnalysis: ${{ parameters.CodeAnalysis}}
+
+- template: IISDeployStage.yml@templates
+  parameters:
+    WebSiteName: '${{ parameters.WebSiteName}}'
+    WebAppName: '${{ parameters.WebAppName}}'
+    Environment: '${{ parameters.Environment}}'
+    AutoDeploy: ${{ parameters.AutoDeploy}}

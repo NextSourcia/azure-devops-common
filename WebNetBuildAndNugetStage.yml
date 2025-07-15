@@ -1,0 +1,72 @@
+parameters:
+- name: 'solution'
+  default: '**/*.sln'
+  type: string
+- name: 'BuildPlatform'
+  default: 'Any CPU'
+  type: string
+- name: 'BuildConfiguration'
+  default: 'Release'
+  type: string
+- name: 'PackageName'
+  default: ''
+  type: string
+- name: 'CodeAnalysis'
+  type: boolean
+  default: true
+- name: 'WebSiteName'
+  type: string
+  default: 'TestWebSites'
+- name: 'WebAppName'
+  type: string
+  default: ''
+- name: 'Environment'
+  type: string
+  default: 'Test'
+- name: 'AutoDeploy'
+  type: boolean
+  default: false
+- name: 'PrereleaseNuget'
+  type: boolean
+  default: false
+
+stages:
+- stage: 'Build_${{ parameters.BuildConfiguration}}'
+  jobs:
+  - job: Build
+    pool: 'windows-10'
+
+    steps:
+    - template: WebNetBuildSteps.yml@templates
+      parameters:
+        solution: ${{ parameters.solution}}
+        BuildPlatform: ${{ parameters.BuildPlatform}}
+        BuildConfiguration: ${{ parameters.BuildConfiguration}}
+        CodeAnalysis: ${{ parameters.CodeAnalysis}}
+
+    - task: NuGetCommand@2
+      condition: eq(${{ parameters.PrereleaseNuget}}, false)
+      displayName: 'NuGet pack'
+      inputs:
+        command: pack
+        packagesToPack: ${{ parameters.PackageName }}/${{ parameters.PackageName }}.nuspec
+        versioningScheme: byBuildNumber
+        includeSymbols: true
+        buildProperties: 'Version=$(Build.BuildNumber);Id=${{ parameters.PackageName }};Title=${{ parameters.PackageName }};Description=${{ parameters.PackageName }};Tags=${{ parameters.PackageName }};ReleaseNotes=""'
+
+    - task: NuGetCommand@2
+      condition: eq(${{ parameters.PrereleaseNuget}}, true)
+      displayName: 'NuGet pack for prerelease'
+      inputs:
+        command: pack
+        packagesToPack: ${{ parameters.PackageName }}/${{ parameters.PackageName }}.nuspec
+        includeSymbols: true
+        buildProperties: 'Version=$(Build.BuildNumber)-$(Build.SourceBranchName)-beta;Id=${{ parameters.PackageName }};Title=${{ parameters.PackageName }};Description=${{ parameters.PackageName }};Tags=${{ parameters.PackageName }};ReleaseNotes=""'
+
+
+    - task: NuGetCommand@2
+      displayName: 'NuGet push'
+      inputs:
+        command: push
+        publishVstsFeed: 'TODO GUID'
+
